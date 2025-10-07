@@ -2,7 +2,9 @@ from network import Node, Network
 from dataclasses import dataclass
 from typing import List
 import numpy as np
+import numpy.typing as npt
 import uuid
+from typing import Tuple
 
 
 @dataclass
@@ -12,16 +14,33 @@ class NeighbourState:
     """
 
     id: uuid.UUID
-    position: tuple
+    position: np.ndarray
     phase: float  # phase in radians
 
+@dataclass
+class ExperimentalParameters:
+    """
+    Class which tracks experimental parameters
+    """
+
+    K: float
+    J: float
+    A: float
+    B: float
+    planes: List
 
 class Robot(Node):
     """
     A robot which implements the swarmalator model.
     """
 
-    def __init__(self, network: Network, position=(0, 0), phase=0.0):
+    def __init__(self, 
+        network: Network, 
+        position=np.array([0, 0, 0]), 
+        phase=0.0, 
+        natural_frequency=0.0, 
+        experimental_parameters=ExperimentalParameters(K=0.0, J=1.0, A=1.0, B=1.0, planes=[]),
+    ):
         """
         Initialize the robot
         """
@@ -31,14 +50,17 @@ class Robot(Node):
         self._state = NeighbourState(id=uuid.uuid4(), position=position, phase=phase)
 
         # Swarmalator properties
-        self._K = 0.0
-        self._J = 1.0
-        self._A = 1.0
-        self._B = 1.0
-        self._natural_frequency = 0.0
+        self._K = experimental_parameters.K
+        self._J = experimental_parameters.J
+        self._A = experimental_parameters.A
+        self._B = experimental_parameters.B
+        self._natural_frequency = natural_frequency
 
         # Keep track of other robots
         self._neighbours: List[NeighbourState] = []
+
+        # Keep track of planes
+        self._planes = experimental_parameters.planes
 
         # Start the robot
         self._network.join(self)
@@ -57,50 +79,53 @@ class Robot(Node):
         Update the robot state for one time step
         """
         delta_phase_sum = 0
-        delta_v_x_sum = 0
-        delta_v_y_sum = 0
+        net_force = np.zeros(3, dtype=float)
+
+        phase = self.phase
+        clean_position = self.position
+        position = clean_position
 
         for neighbour in self._neighbours:
-            theta_diff = neighbour.phase - self._state.phase
-            distance = np.sqrt(
-                (neighbour.position[0] - self._state.position[0]) ** 2
-                + (neighbour.position[1] - self._state.position[1]) ** 2
-            )
+            theta_diff = neighbour.phase - phase
+            distance = np.sqrt(np.sum((neighbour.position - position) ** 2))
 
             if distance == 0:
                 distance = 1e-10  # Avoid division by zero
 
             delta_phase_sum += np.sin(theta_diff) / distance
-            delta_v_x_sum += (
-                (neighbour.position[0] - self._state.position[0]) / distance
-            ) * (self._A + self._J * np.cos(theta_diff)) - (
-                self._B
-                * (neighbour.position[0] - self._state.position[0])
-                / (distance**2)
-            )
-            delta_v_y_sum += (
-                (neighbour.position[1] - self._state.position[1]) / distance
-            ) * (self._A + self._J * np.cos(theta_diff)) - (
-                self._B
-                * (neighbour.position[1] - self._state.position[1])
-                / (distance**2)
-            )
+
+            attractive_force = (neighbour.position - position) / distance * (self._A + self._J * np.cos(theta_diff))
+            repulsive_force = (neighbour.position - position) / distance**2 * self._B
+
+            net_force += attractive_force - repulsive_force
+
+        # Add plane repulsive forces
+
+        for plane in self._planes:
+            point = plane[0]
+            normal = plane[1]
+
+            distance = np.dot((position - point), normal)
+
+            plane_repulsive_force = np.zeros(3, dtype=float)
+            plane_repulsive_force += normal / distance * self._B
+
+            net_force += plane_repulsive_force
 
         if len(self._neighbours) > 0:
             delta_phase_sum *= self._K / len(self._neighbours)
-            delta_v_x_sum /= len(self._neighbours)
-            delta_v_y_sum /= len(self._neighbours)
+            net_force /= len(self._neighbours) + len(self._planes)
+
+        # Add random noise
+        net_force += np.random.normal(0, 0.01, 3)
 
         # Update phase
         new_phase = (
-            self._state.phase + dt * (self._natural_frequency + delta_phase_sum)
+            phase + dt * (self._natural_frequency + delta_phase_sum)
         ) % (2 * np.pi)
 
         # Update position
-        new_position = (
-            self._state.position[0] + dt * delta_v_x_sum,
-            self._state.position[1] + dt * delta_v_y_sum,
-        )
+        new_position = position + dt * net_force
 
         self._state = NeighbourState(
             id=self._state.id, position=new_position, phase=new_phase
