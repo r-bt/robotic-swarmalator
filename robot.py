@@ -24,9 +24,10 @@ class ExperimentalParameters:
     """
 
     K: float
-    J: float
-    A: float
-    B: float
+    J_1: float
+    J_2: float
+    A: List[float]
+    B: List[float]
     planes: List
 
 class Robot(Node):
@@ -39,7 +40,7 @@ class Robot(Node):
         position=np.array([0, 0, 0]), 
         phase=0.0, 
         natural_frequency=0.0, 
-        experimental_parameters=ExperimentalParameters(K=0.0, J=1.0, A=1.0, B=1.0, planes=[]),
+        experimental_parameters=ExperimentalParameters(K=0.0, J_1=1.0, J_2=0.0, A=1.0, B=1.0, planes=[]),
     ):
         """
         Initialize the robot
@@ -51,7 +52,8 @@ class Robot(Node):
 
         # Swarmalator properties
         self._K = experimental_parameters.K
-        self._J = experimental_parameters.J
+        self._J_1 = experimental_parameters.J_1
+        self._J_2 = experimental_parameters.J_2
         self._A = experimental_parameters.A
         self._B = experimental_parameters.B
         self._natural_frequency = natural_frequency
@@ -94,8 +96,8 @@ class Robot(Node):
 
             delta_phase_sum += np.sin(theta_diff) / distance
 
-            attractive_force = (neighbour.position - position) / distance * (self._A + self._J * np.cos(theta_diff))
-            repulsive_force = (neighbour.position - position) / distance**2 * self._B
+            attractive_force = (neighbour.position - position) / distance * (self._A + self._J_1 * np.cos(theta_diff))
+            repulsive_force = (neighbour.position - position) / distance**2 * (self._B - self._J_2 * np.cos(theta_diff))
 
             net_force += attractive_force - repulsive_force
 
@@ -108,7 +110,7 @@ class Robot(Node):
             distance = np.dot((position - point), normal)
 
             plane_repulsive_force = np.zeros(3, dtype=float)
-            plane_repulsive_force += normal / distance * self._B
+            plane_repulsive_force += normal / distance * max(*self._B)
 
             net_force += plane_repulsive_force
 

@@ -62,16 +62,16 @@ def main():
     planes = [
         (np.array([0, 0, 0]), np.array([0, 0, 1])),
         (np.array([0, 0, 1.5]), np.array([0, 0, -1])),
-        (np.array([1, 0, 0]), np.array([1, 0, 0])),
-        (np.array([0, 1, 0]), np.array([0, 1, 0])),
-        (np.array([-1,0,0]), np.array([-1, 0, 0])),
-        (np.array([0,-1,0]), np.array([0, -1, 0])),
+        # (np.array([2, 0, 0]), np.array([1, 0, 0])),
+        # (np.array([0, 1, 0]), np.array([0, 1, 0])),
+        # (np.array([-1,0,0]), np.array([-1, 0, 0])),
+        # (np.array([0,-1,0]), np.array([0, -1, 0])),
     ]
 
     experimental_parameters = ExperimentalParameters(
-        K=1.0, J=1.0, A=1.0, B=1.0, planes=planes)
+        K=-0.4, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[1.0,1.0,1.5], planes=planes)
 
-    natural_frequencies = np.ones(robot_count)
+    natural_frequencies = np.zeros(robot_count)
     # natural_frequencies[:len(natural_frequencies) // 2] = -1.0
 
     robots = [Robot(network, positions[i], float(phases[i]), natural_frequency=natural_frequencies[i], experimental_parameters=experimental_parameters) for i in range(robot_count)]
@@ -97,7 +97,7 @@ def main():
     # Add a 3D axis helper
     axis = scene.visuals.XYZAxis(parent=view.scene)
 
-    dt = 0.01  # simulation time step (s)
+    dt = 0.05  # simulation time step (s)
 
     def update(event):
         # Update all robots
