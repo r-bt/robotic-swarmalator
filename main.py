@@ -46,7 +46,7 @@ def create_plane(point, normal):
 
     return mesh
 
-robot_count = 50
+robot_count = 10
 
 def main():
     # Create a network
@@ -54,27 +54,33 @@ def main():
 
     # Create all the robots with 3D positions
     positions = np.random.uniform(-1, 1, (robot_count, 3))
-    positions[:, 2] = 0.5
+    positions[:, 2] = np.random.uniform(0.1, 1, robot_count)  # small z variation
 
     # phases = np.random.uniform(0, 2 * np.pi, robot_count)
-    phases = np.linspace(0, 2 * np.pi, robot_count)
+    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
 
     planes = [
         (np.array([0, 0, 0]), np.array([0, 0, 1])),
-        (np.array([0, 0, 1.5]), np.array([0, 0, -1])),
-        # (np.array([2, 0, 0]), np.array([1, 0, 0])),
-        # (np.array([0, 1, 0]), np.array([0, 1, 0])),
-        # (np.array([-1,0,0]), np.array([-1, 0, 0])),
-        # (np.array([0,-1,0]), np.array([0, -1, 0])),
+        (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
+        (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
+        (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
+        (np.array([-1.5,0,0]), np.array([1, 0, 0])),
+        (np.array([0,-1.5,0]), np.array([0, 1, 0])),
     ]
 
     experimental_parameters = ExperimentalParameters(
-        K=-0.4, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[1.0,1.0,1.5], planes=planes)
+        K=1.0, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[1.0,1.0,1.0], planes=planes)
 
     natural_frequencies = np.zeros(robot_count)
     # natural_frequencies[:len(natural_frequencies) // 2] = -1.0
 
     robots = [Robot(network, positions[i], float(phases[i]), natural_frequency=natural_frequencies[i], experimental_parameters=experimental_parameters) for i in range(robot_count)]
+
+    target = np.array([1.0, 1.0, 0.75])
+    # target=None
+
+    for r in robots:
+        r.set_target(target)
 
     # Setup VisPy 3D scene
     canvas = scene.SceneCanvas(keys='interactive', size=(900, 700), show=True, title='Swarmalators 3D')
@@ -82,6 +88,10 @@ def main():
     view.camera = 'turntable'
 
     scatter = scene.visuals.Markers(parent=view.scene)
+
+    target_marker = scene.visuals.Markers(parent=view.scene)
+    if target is not None:
+        target_marker.set_data(np.array([target]), face_color=(1, 0, 0, 1), size=10.0, edge_width=0.0)
 
     # Initial data
     current_positions = np.array([robot.position for robot in robots], dtype=np.float32)
