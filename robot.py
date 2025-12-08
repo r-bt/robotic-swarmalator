@@ -5,6 +5,7 @@ import numpy as np
 import uuid
 from typing import Tuple
 import pdb
+import cvxpy as cp
 
 """
 At 0.25m from the plane want to start ramping up the repulsive force
@@ -74,6 +75,11 @@ class Robot(Node):
         # Keep track of the current target
         self._target: np.ndarray = None
 
+        # Add CBF parameters
+        self._rMin = 0.40  # Minimum inner radius of the annulus
+        self._rMax = 0.6 # Maximum outer radius of the annulus
+        self._p = 10.0    # CBF parameter (alpha for exponential decay)
+
         # Start the robot
         self._network.join(self)
         self._network.broadcast(self._state)
@@ -124,6 +130,8 @@ class Robot(Node):
         if self._target is not None:
             J1 = self._get_J1_value()
 
+        J1_safe = self.cbf(J1)
+
         for neighbour in self._neighbours:
             theta_diff = neighbour.phase - phase
             distance = np.sqrt(np.sum((neighbour.position - position) ** 2))
@@ -133,7 +141,7 @@ class Robot(Node):
 
             delta_phase_sum += np.sin(theta_diff) / distance
 
-            attractive_force = (neighbour.position - position) / distance * (self._A + J1 * np.cos(theta_diff))
+            attractive_force = (neighbour.position - position) / distance * (self._A + J1_safe * np.cos(theta_diff))
             repulsive_force = (neighbour.position - position) / distance**2 * (self._B - self._J_2 * np.cos(theta_diff))
 
             net_force += attractive_force - repulsive_force
@@ -209,3 +217,130 @@ class Robot(Node):
             self._target = None
         else:
             self._target = np.array(target)
+    
+    # Add this method to the Robot class
+
+    def cbf(self, J_target: float) -> float:
+        """
+        3D Decentralized Control Barrier Function (CBF).
+        Computes a safe J_1 for this agent via a 1D Quadratic Program (QP).
+        
+        The control input u = J_1. The QP minimizes ||J_1 - J_target||^2 
+        subject to Lfb_k + Lgb_k * J_1 >= -p * b_k (for k=1, 2).
+        """
+        xi = self.position
+        
+        if len(self._neighbours) == 0:
+            return J_target
+        
+        N_factor = len(self._neighbours)
+
+        # 1. Centroid Calculation
+        all_positions = [np.array(n.position) for n in self._neighbours]
+        all_positions.append(xi)
+        centroid = np.mean(all_positions, axis=0) # 3D centroid (x0, y0, z0)
+
+        # Ensure A and B are used as scalars
+        A_scalar = self._A[0] if isinstance(self._A, list) else self._A
+        B_scalar = self._B[0] if isinstance(self._B, list) else self._B
+
+        Lfb0 = np.zeros(3) # Drift vector f(x)
+        Lgb0 = np.zeros(3) # Control vector g(x)
+
+        for neighbour in self._neighbours:
+            xj = np.array(neighbour.position)
+            theta_diff = neighbour.phase - self.phase
+            pos_diff = xj - xi
+            dist = np.linalg.norm(pos_diff)
+
+            if dist < 1e-10: 
+                continue
+            
+            # Lfb0: The drift term (Attraction/Repulsion without J terms)
+            Lfb0 += A_scalar * pos_diff / dist - B_scalar * pos_diff / (dist ** 2)
+            
+            # Lgb0: The control term (Coefficient of J1)
+            # The control input J1 modifies the attractive term, which is proportional to cos(theta_diff)
+            Lgb0 += pos_diff / dist * np.cos(theta_diff)
+        
+        # Averaging
+        Lfb0 /= N_factor
+        Lgb0 /= N_factor
+
+        # 3. Calculate Barrier Functions (b) and Lie Derivatives (Lfb, Lgb)
+        
+        center_diff = xi - centroid # 3D vector (p - p0)
+        
+        # Inner circular constraint (h1 = ||p - p0||^2 - rMin^2 >= 0)
+        b1 = np.sum(center_diff ** 2) - self._rMin ** 2
+        
+        # Lfb1 = grad(h1) . Lf0 
+        Lfb1 = 2 * center_diff @ Lfb0
+        
+        # Lgb1 = grad(h1) . Lg0 
+        Lgb1 = 2 * center_diff @ Lgb0
+
+        # Outer circular constraint (h2 = rMax^2 - ||p - p0||^2 >= 0)
+        b2 = self._rMax ** 2 - np.sum(center_diff ** 2)
+        
+        # Lfb2 = grad(h2) . Lf0 
+        Lfb2 = -2 * center_diff @ Lfb0
+        
+        # Lgb2 = grad(h2) . Lg0 
+        Lgb2 = -2 * center_diff @ Lgb0
+
+        # 4. Solve the Quadratic Program (QP)
+        # p = self._p 
+        # u = cp.Variable(1) # u is the safe J_1
+        
+        # # Constraints: -Lgb * u <= Lfb + p*b
+        # # Ab @ u <= b_vec
+        # # Ab = [[-Lgb1], [-Lgb2]]
+        # Ab = np.array([[-Lgb1], [-Lgb2]])
+        # b_vec = np.array([Lfb1 + p*b1, Lfb2 + p*b2])
+        
+        # # Objective: minimize 0.5*u^2 - J_target*u 
+        # objective = cp.Minimize(0.5*cp.quad_form(u, np.eye(1)) + (-J_target)*u)
+        # constraints = [Ab @ u <= b_vec]
+
+        # prob = cp.Problem(objective, constraints)
+        
+        # # Solve the QP
+        # prob.solve(solver=cp.ECOS, verbose=False) 
+
+        # # 5. Return Safe J_1
+        # if u.value is None or prob.status in ["infeasible", "unbounded"]:
+        #     # Fallback to the target value
+        #     return J_target 
+    
+        # print(float(u.value[0]))
+        
+        # return float(u.value[0])
+    
+        p = self._p
+
+        # constraints as (Lf, Lg, b, p)
+        constraints = [
+            (Lfb1, Lgb1, b1, p),
+            (Lfb2, Lgb2, b2, p)
+        ]
+
+        # project J_target onto intersection
+        J_safe = self.cbf_project_multi(J_target, constraints)
+        return J_safe
+
+    def cbf_project_multi(self, u0, constraints):
+        u_min = -float("inf")
+        u_max =  float("inf")
+
+        for (Lf, Lg, b, p) in constraints:
+            rhs = -(Lf + p*b)
+            if abs(Lg) < 1e-9:
+                continue
+            if Lg > 0:
+                u_min = max(u_min, rhs / Lg)
+            else:
+                u_max = min(u_max, rhs / Lg)
+
+        return min(max(u0, u_min), u_max)
+

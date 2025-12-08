@@ -46,26 +46,33 @@ def create_plane(point, normal):
 
     return mesh
 
-robot_count = 10
+robot_count = 3
 
 def main():
     # Create a network
     network = Network()
 
     # Create all the robots with 3D positions
-    positions = np.random.uniform(-1, 1, (robot_count, 3))
-    positions[:, 2] = np.random.uniform(0.1, 1, robot_count)  # small z variation
+    # positions = np.random.uniform(0, 0.5, (robot_count, 3))
+    # positions[:, 2] = np.random.uniform(0.1, 1, robot_count)  # small z variation
+
+    # All robots need to be along x-y radius of 0.5
+    angles = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
+    radius = 0.5
+    positions = np.array([[radius * np.cos(angle), radius * np.sin(angle),
+                            np.random.uniform(0.75, 0.85)] for angle in angles])
 
     # phases = np.random.uniform(0, 2 * np.pi, robot_count)
     phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
+    phases = np.zeros(robot_count)
 
     planes = [
-        (np.array([0, 0, 0]), np.array([0, 0, 1])),
-        (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
-        (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
-        (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
-        (np.array([-1.5,0,0]), np.array([1, 0, 0])),
-        (np.array([0,-1.5,0]), np.array([0, 1, 0])),
+        # (np.array([0, 0, 0]), np.array([0, 0, 1])),
+        # (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
+        # (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
+        # (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
+        # (np.array([-1.5,0,0]), np.array([1, 0, 0])),
+        # (np.array([0,-1.5,0]), np.array([0, 1, 0])),
     ]
 
     experimental_parameters = ExperimentalParameters(
@@ -76,8 +83,8 @@ def main():
 
     robots = [Robot(network, positions[i], float(phases[i]), natural_frequency=natural_frequencies[i], experimental_parameters=experimental_parameters) for i in range(robot_count)]
 
-    target = np.array([1.0, 1.0, 0.75])
-    # target=None
+    # target = np.array([1.0, 1.0, 0.75])
+    target=None
 
     for r in robots:
         r.set_target(target)
@@ -123,6 +130,16 @@ def main():
         col = angles_to_rgb(ang)
 
         scatter.set_data(pos, face_color=col, size=5.0, edge_width=0.0)
+
+        # Find the centroid of the swarm
+        centroid = np.mean(pos, axis=0)
+
+        # Find the min and max radius from centroid
+        radii = np.linalg.norm(pos - centroid, axis=1)
+        min_radius = np.min(radii)
+        max_radius = np.max(radii)
+
+        print(f"Min radius: {min_radius:.2f}, Max radius: {max_radius:.2f}")
 
     timer = app.Timer(interval=dt, connect=update, start=True)
     app.run()
