@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import List
 import numpy as np
 import uuid
+import cvxpy as cp # Required for the Quadratic Program
+from typing import Tuple # For type hinting in the cbf method
 
 
 @dataclass
@@ -31,7 +33,7 @@ class Robot(Node):
         self._state = NeighbourState(id=uuid.uuid4(), position=position, phase=phase)
 
         # Swarmalator properties
-        self._K = 0.0
+        self._K = 1.0
         self._J = 1.0
         self._A = 1.0
         self._B = 1.0
@@ -43,6 +45,11 @@ class Robot(Node):
         # Start the robot
         self._network.join(self)
         self._network.broadcast(self._state)
+
+        # --- CBF Parameters ---
+        self._rMin = 1.8  # Inner annulus radius
+        self._rMax = 2 # Outer annulus radius
+        self._p = 10.0    # CBF parameter (alpha in LfB + alpha*B >= 0)
 
     @property
     def position(self):
@@ -60,6 +67,8 @@ class Robot(Node):
         delta_v_x_sum = 0
         delta_v_y_sum = 0
 
+        J_safe = self.cbf(self._J)
+
         for neighbour in self._neighbours:
             theta_diff = neighbour.phase - self._state.phase
             distance = np.sqrt(
@@ -73,14 +82,14 @@ class Robot(Node):
             delta_phase_sum += np.sin(theta_diff) / distance
             delta_v_x_sum += (
                 (neighbour.position[0] - self._state.position[0]) / distance
-            ) * (self._A + self._J * np.cos(theta_diff)) - (
+            ) * (self._A + J_safe * np.cos(theta_diff)) - (
                 self._B
                 * (neighbour.position[0] - self._state.position[0])
                 / (distance**2)
             )
             delta_v_y_sum += (
                 (neighbour.position[1] - self._state.position[1]) / distance
-            ) * (self._A + self._J * np.cos(theta_diff)) - (
+            ) * (self._A + J_safe * np.cos(theta_diff)) - (
                 self._B
                 * (neighbour.position[1] - self._state.position[1])
                 / (distance**2)
@@ -135,3 +144,96 @@ class Robot(Node):
                 self._neighbours.append(message)
         else:
             raise ValueError("Message must be of type NeighbourState")
+        
+    def cbf(self, J_target: float) -> float:
+        """
+        Control Barrier Function (CBF) for a single agent (decentralized).
+        Computes the safe control input J via a 1D Quadratic Program (QP).
+        
+        Args:
+            J_target: The desired coupling strength (J_star).
+
+        Returns:
+            The safe coupling strength J.
+        """
+        if not self._neighbours:
+            return J_target
+        
+        xi = np.array(self.position)
+        
+        # --- 1. Calculate Centroid and Averaged Dynamics (Lfb0, Lgb0) ---
+        
+        # Calculate centroid of all agents (including self)
+        all_positions = [np.array(n.position) for n in self._neighbours] + [xi]
+        centroid = np.mean(all_positions, axis=0)
+
+        # Initialize averaged drift and control vector components (2D)
+        Lfb0 = np.zeros(2)
+        Lgb0 = np.zeros(2)
+
+        for neighbour in self._neighbours:
+            xj = np.array(neighbour.position)
+            theta_diff = neighbour.phase - self.phase
+            
+            # Position difference vector
+            pos_diff = xj - xi
+            dist = np.linalg.norm(pos_diff)
+
+            if dist < 1e-10: 
+                continue
+
+            # This calculation matches the Lfb0, Lgb0 from the MATLAB code
+            Lfb0 += self._A * pos_diff / dist - self._B * pos_diff / (dist ** 2)
+            Lgb0 += pos_diff / dist * np.cos(theta_diff)
+        
+        # Averaging
+        N_minus_1 = len(self._neighbours)
+        Lfb0 /= N_minus_1
+        Lgb0 /= N_minus_1
+
+
+        # --- 2. Calculate Barrier Functions (b) and Lie Derivatives (Lfb, Lgb) ---
+        
+        center_diff = xi - centroid # (x - x0, y - y0)
+        
+        # Inner circular constraint (h1 = ||p - p0||^2 - rMin^2 >= 0)
+        b1 = np.sum(center_diff ** 2) - self._rMin ** 2
+        Lfb1 = 2 * center_diff @ Lfb0
+        Lgb1 = 2 * center_diff @ Lgb0
+
+        # Outer circular constraint (h2 = rMax^2 - ||p - p0||^2 >= 0)
+        b2 = self._rMax ** 2 - np.sum(center_diff ** 2)
+        Lfb2 = -2 * center_diff @ Lfb0
+        Lgb2 = -2 * center_diff @ Lgb0
+
+        # --- 3. Solve the Quadratic Program (QP) ---
+        
+        # The control input is u = J (1D variable)
+        u = cp.Variable(1) 
+        
+        # Constraint 1 (Inner): -Lgb1 * J <= Lfb1 + p*b1
+        # Constraint 2 (Outer): -Lgb2 * J <= Lfb2 + p*b2
+        
+        # Ab @ u <= b_vec
+        Ab = np.array([[-Lgb1], [-Lgb2]])
+        b_vec = np.array([Lfb1 + self._p*b1, Lfb2 + self._p*b2])
+        
+        # Objective: minimize 0.5 * ||u - J_target||^2
+        # Equivalent to: minimize 0.5*u^2 - J_target*u + const
+        H = np.eye(1)
+        F = -J_target
+        objective = cp.Minimize(0.5*cp.quad_form(u, H) + F*u)
+        constraints = [Ab @ u <= b_vec]
+
+        prob = cp.Problem(objective, constraints)
+        
+        # Use ECOS or OSQP solver for speed and reliability
+        prob.solve(solver=cp.ECOS, verbose=False) 
+
+        # --- 4. Return Safe J ---
+        if u.value is None or prob.status in ["infeasible", "unbounded"]:
+            # If the QP is infeasible (no safe J can be found), 
+            # we return the target J (a common fallback for decentralised systems)
+            return J_target
+        
+        return float(u.value[0])

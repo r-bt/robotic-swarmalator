@@ -25,7 +25,7 @@ def angles_to_rgb(angles_rad):
     return rgb_colors
 
 
-robot_count = 12
+robot_count = 20
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
 
     # Create all the robots
     positions = np.random.uniform(-1, 1, (robot_count, 2))
-    phases = np.linspace(0, 2 * np.pi, robot_count)
+    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
 
     robots = [Robot(network, positions[i], phases[i]) for i in range(robot_count)]
 
@@ -45,8 +45,8 @@ def main():
     dt = 0.01  # simulation time step
 
     def init():
-        ax.set_xlim(-2, 2)
-        ax.set_ylim(-2, 2)
+        ax.set_xlim(-4, 4)
+        ax.set_ylim(-4, 4)
         return (sc,)
 
     def update(frame):
