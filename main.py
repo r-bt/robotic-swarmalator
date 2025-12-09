@@ -34,7 +34,7 @@ def main():
 
     # Create all the robots
     positions = np.random.uniform(-1, 1, (robot_count, 2))
-    phases = np.linspace(0, 2 * np.pi, robot_count)
+    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
 
     robots = [Robot(network, positions[i], phases[i]) for i in range(robot_count)]
 
