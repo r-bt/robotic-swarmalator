@@ -1,5 +1,5 @@
 from network import Network
-from robot import Robot
+from robot import Robot, Obstacle
 import numpy as np
 import colorsys
 import matplotlib.pyplot as plt
@@ -25,28 +25,54 @@ def angles_to_rgb(angles_rad):
     return rgb_colors
 
 
-robot_count = 12
+robot_count = 25
 
 
 def main():
     # Create a network
     network = Network()
+    
+    # Create obstacles
+    obstacles = [
+        Obstacle(position=(0.5, 0.5), radius=0.3),
+        Obstacle(position=(-0.6, -0.4), radius=0.25),
+        Obstacle(position=(0.8, -0.7), radius=0.2),
+        Obstacle(position=(-0.5, 0.8), radius=0.15),
+    ]
 
     # Create all the robots
-    positions = np.random.uniform(-1, 1, (robot_count, 2))
+    positions = np.random.uniform(-3, 3, (robot_count, 2))
     phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
 
-    robots = [Robot(network, positions[i], phases[i]) for i in range(robot_count)]
+    nat_freqs = np.ones(robot_count)
+    half_len = robot_count // 2
+    nat_freqs[:half_len] = -1.0  # First half slower
+
+    robots = [Robot(network, positions[i], phases[i], nat_freqs[i], obstacles) for i in range(robot_count)]
 
     # Setup the animation
     fig, ax = plt.subplots()
     sc = ax.scatter([], [], s=20)
 
-    dt = 0.01  # simulation time step
+    ax.set_aspect('equal', 'box')
+
+    dt = 0.05  # simulation time step
 
     def init():
-        ax.set_xlim(-2, 2)
-        ax.set_ylim(-2, 2)
+        ax.set_xlim(-5, 5)
+        ax.set_ylim(-5, 5)
+        
+        # Draw obstacles
+        for obstacle in obstacles:
+            circle = plt.Circle(
+                obstacle.position, 
+                obstacle.radius, 
+                color='red', 
+                alpha=0.3, 
+                zorder=1
+            )
+            ax.add_patch(circle)
+        
         return (sc,)
 
     def update(frame):
@@ -65,6 +91,7 @@ def main():
 
         sc.set_offsets(positions)
         sc.set_color(colors)
+        sc.set_zorder(2)  # Robots on top of obstacles
         return (sc,)
 
     ani = FuncAnimation(fig, update, init_func=init, blit=True, interval=int(dt * 1000))
