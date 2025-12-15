@@ -25,7 +25,7 @@ def angles_to_rgb(angles_rad):
     return rgb_colors
 
 
-robot_count = 50
+robot_count = 9
 
 
 def main():
@@ -33,15 +33,15 @@ def main():
     network = Network()
 
     # Create all the robots
-    positions = np.random.uniform(-1, 1, (robot_count, 2))
+    positions = np.random.uniform(-10, 10, (robot_count, 2))
 
     # Along the circumference of a circle of radius 4.5
-    angles = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
-    radii = 4.5
-    positions = np.array([[radii * np.cos(angle), radii * np.sin(angle)] for angle in angles])
+    # angles = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
+    # radii = 1
+    # positions = np.array([[radii * np.cos(angle), radii * np.sin(angle)] for angle in angles])
 
-    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
-    # phases = np.zeros(robot_count)  # Start all phases at 0
+    # phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
+    phases = np.zeros(robot_count)  # Start all phases at 0?
 
     robots = [Robot(network, positions[i], phases[i]) for i in range(robot_count)]
 
@@ -49,16 +49,14 @@ def main():
     fig, ax = plt.subplots()
     sc = ax.scatter([], [], s=20)
 
-    ax.set_xlim(-10, 10)
-    ax.set_ylim(-10, 10)
     ax.set_aspect('equal', adjustable='box')
 
-    c1 = plt.Circle((0,0), 4, fill=False, color='black', linewidth=1, linestyle='dashed')
-    c2 = plt.Circle((0,0), 5, fill=False, color='black', linewidth=1, linestyle='dashed')
+    c1 = plt.Circle((0,0), 1.8, fill=False, color='black', linewidth=1, linestyle='dashed')
+    c2 = plt.Circle((0,0), 2.1, fill=False, color='black', linewidth=1, linestyle='dashed')
     ax.add_patch(c1)
     ax.add_patch(c2)
 
-    dt = 0.1  # simulation time step
+    dt = 0.05  # simulation time step
 
     def init():
         ax.set_xlim(-10, 10)

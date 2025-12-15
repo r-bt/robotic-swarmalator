@@ -5,6 +5,9 @@ import numpy as np
 import uuid
 import cvxpy as cp # Required for the Quadratic Program
 from typing import Tuple # For type hinting in the cbf method
+import random
+
+MAX_VELOCITY = 2.0  # Maximum velocity for the robots
 
 
 @dataclass
@@ -34,7 +37,7 @@ class Robot(Node):
 
         # Swarmalator properties
         self._K = 1.0
-        self._J = 1.0
+        self._J = 0.0
         self._A = 1.0
         self._B = 1.0
         self._natural_frequency = 0.0
@@ -47,9 +50,11 @@ class Robot(Node):
         self._network.broadcast(self._state)
 
         # --- CBF Parameters ---
-        self._rMin = 4  # Inner annulus radius
-        self._rMax = 5 # Outer annulus radius
+        self._rMin = 1.8  # Inner annulus radius
+        self._rMax = 2.1 # Outer annulus radius
         self._p = 10.0    # CBF parameter (alpha in LfB + alpha*B >= 0)
+
+        self._steps = 0
 
     @property
     def position(self):
@@ -67,7 +72,10 @@ class Robot(Node):
         delta_v_x_sum = 0
         delta_v_y_sum = 0
 
-        J_safe = self.cbf(self._J)
+        # if (self._steps < 500):
+            # self._steps += 1
+        # else:
+        self._J = self.cbf(self._J)
         # J_safe = self._J
 
         for neighbour in self._neighbours:
@@ -83,14 +91,14 @@ class Robot(Node):
             delta_phase_sum += np.sin(theta_diff) / distance
             delta_v_x_sum += (
                 (neighbour.position[0] - self._state.position[0]) / distance
-            ) * (self._A + J_safe * np.cos(theta_diff)) - (
+            ) * (self._A + self._J * np.cos(theta_diff)) - (
                 self._B
                 * (neighbour.position[0] - self._state.position[0])
                 / (distance**2)
             )
             delta_v_y_sum += (
                 (neighbour.position[1] - self._state.position[1]) / distance
-            ) * (self._A + J_safe * np.cos(theta_diff)) - (
+            ) * (self._A + self._J * np.cos(theta_diff)) - (
                 self._B
                 * (neighbour.position[1] - self._state.position[1])
                 / (distance**2)
@@ -100,6 +108,9 @@ class Robot(Node):
             delta_phase_sum *= self._K / len(self._neighbours)
             delta_v_x_sum /= len(self._neighbours)
             delta_v_y_sum /= len(self._neighbours)
+
+        delta_v_x_sum = np.clip(delta_v_x_sum, -MAX_VELOCITY, MAX_VELOCITY)
+        delta_v_y_sum = np.clip(delta_v_y_sum, -MAX_VELOCITY, MAX_VELOCITY)
 
         # Update phase
         new_phase = (
@@ -145,6 +156,32 @@ class Robot(Node):
                 self._neighbours.append(message)
         else:
             raise ValueError("Message must be of type NeighbourState")
+        
+    def solve_1d_cbf(self, J_star, A, b):
+        """
+        A: shape (m,), constraint coefficients a_i
+        b: shape (m,), bounds b_i
+        """
+        J_min = -np.inf
+        J_max =  np.inf
+
+        for ai, bi in zip(A, b):
+            if abs(ai) < 1e-12:
+                if bi < 0:
+                    return None  # infeasible
+                continue
+
+            thresh = bi / ai
+            if ai > 0:
+                J_max = min(J_max, thresh)
+            else:
+                J_min = max(J_min, thresh)
+
+        if J_min > J_max:
+            return None  # infeasible
+
+        return float(np.clip(J_star, J_min, J_max))
+
         
     def cbf(self, J_target: float) -> float:
         """
@@ -211,21 +248,24 @@ class Robot(Node):
         
         Ab = np.array([[-Lgb1], [-Lgb2]])
         b_vec = np.array([Lfb1 + self._p*b1, Lfb2 + self._p*b2])
+
+        J_safe = self.solve_1d_cbf(J_target, A=Ab.flatten(), b=b_vec)
+        return J_target if J_safe is None else J_safe
         
         # Objective: minimize 0.5 * ||u - J_target||^2
-        H = np.eye(1)
-        F = -J_target
-        objective = cp.Minimize(0.5*cp.quad_form(u, H) + F*u)
-        constraints = [Ab @ u <= b_vec]
+        # H = np.eye(1)
+        # F = -J_target
+        # objective = cp.Minimize(0.5*cp.quad_form(u, H) + F*u)
+        # constraints = [Ab @ u <= b_vec]
 
-        prob = cp.Problem(objective, constraints)
+        # prob = cp.Problem(objective, constraints)
         
-        prob.solve(solver=cp.ECOS, verbose=False) 
+        # prob.solve(solver=cp.OSQP, verbose=False) 
 
-        if u.value is None or prob.status in ["infeasible", "unbounded"]:
-            return J_target
+        # if u.value is None or prob.status in ["infeasible", "unbounded"]:
+        #     return J_target
         
-        return float(u.value[0])
+        # return float(u.value[0])
 
 
 # Set max velocity to stop agents flying off
