@@ -63,6 +63,9 @@ class Robot(Node):
         self._network.join(self)
         self._network.broadcast(self._state)
 
+        self._target = np.array([3.0, 3.0])  # Default target
+        self._alpha = 1.0  # Weight for J1 value calculation
+
     @property
     def position(self):
         return self._state.position
@@ -70,6 +73,28 @@ class Robot(Node):
     @property
     def phase(self):
         return self._state.phase
+    
+    def _get_J1_value(self):
+        """
+        If target is set, calculate the J1 value based on the distance to the target
+        """
+
+        positions = np.array([neighbour.position for neighbour in self._neighbours] + [self.position])
+
+        # Target is (3,) while positions is (agents, 3) so we need to broadcast to perform the subtraction
+
+        distToTargetVector = self._target - positions[:, :2]
+
+        # Calculate the distance to the target
+        distToTarget = np.linalg.norm(distToTargetVector, axis=1)
+
+        # Calculate the min and max distance to the target
+        minDistToTarget = np.min(distToTarget)
+        maxDistToTarget = np.max(distToTarget)
+
+        J_val = self._alpha * (np.absolute(distToTarget[-1] - minDistToTarget)) / (maxDistToTarget - minDistToTarget)
+
+        return J_val
     
     def _calculate_collision_probability(self, obstacle: Obstacle) -> float:
         """
@@ -99,9 +124,10 @@ class Robot(Node):
     def _calculate_steering_angle(self, obstacle: Obstacle) -> tuple:
         """
         Calculate steering vector to avoid obstacle.
-        Returns a unit vector pointing away from the obstacle.
+        Returns a vector that combines radial repulsion with tangential flow,
+        allowing agents to naturally split and flow around both sides.
         """
-        # Vector from obstacle to robot
+        # Vector from obstacle to robot (radial direction)
         dx = self._state.position[0] - obstacle.position[0]
         dy = self._state.position[1] - obstacle.position[1]
         
@@ -112,44 +138,122 @@ class Robot(Node):
             angle = np.random.uniform(0, 2 * np.pi)
             return (np.cos(angle), np.sin(angle))
         
-        # Normalize to get unit vector away from obstacle
-        return (dx / distance, dy / distance)
+        # Normalize radial direction (away from obstacle)
+        radial_x = dx / distance
+        radial_y = dy / distance
+        
+        # Calculate tangential direction (perpendicular to radial)
+        # Two options: rotate 90° or -90°
+        tangent_left_x = -radial_y
+        tangent_left_y = radial_x
+        tangent_right_x = radial_y
+        tangent_right_y = -radial_x
+        
+        # Determine which tangent direction based on current velocity
+        # This makes agents flow around the obstacle in the direction they're already moving
+        vel_x, vel_y = self._velocity
+        vel_mag = np.sqrt(vel_x**2 + vel_y**2)
+        
+        if vel_mag > 0.01:  # If moving, use velocity to decide
+            # Choose tangent that aligns with current motion
+            dot_left = vel_x * tangent_left_x + vel_y * tangent_left_y
+            dot_right = vel_x * tangent_right_x + vel_y * tangent_right_y
+            
+            if dot_left > dot_right:
+                tangent_x = tangent_left_x
+                tangent_y = tangent_left_y
+            else:
+                tangent_x = tangent_right_x
+                tangent_y = tangent_right_y
+        else:
+            # If stationary, use position relative to obstacle to break symmetry
+            if self._state.position[0] > obstacle.position[0]:
+                tangent_x = tangent_right_x
+                tangent_y = tangent_right_y
+            else:
+                tangent_x = tangent_left_x
+                tangent_y = tangent_left_y
+        
+        # Combine radial (repulsion) with tangential (flow around)
+        # Adapt weights based on distance: closer = more radial, farther = more tangential
+        distance_to_surface = distance - obstacle.radius
+        
+        if distance_to_surface < 0.05:  # Very close or penetrating
+            # Pure radial repulsion when critically close
+            radial_weight = 1.0
+            tangent_weight = 0.0
+        elif distance_to_surface < 0.05:  # Close
+            # Mostly radial
+            radial_weight = 0.7
+            tangent_weight = 0.3
+        else:  # Normal distance
+            # Balanced for smooth flow
+            radial_weight = 0.4
+            tangent_weight = 0.6
+        
+        combined_x = radial_weight * radial_x + tangent_weight * tangent_x
+        combined_y = radial_weight * radial_y + tangent_weight * tangent_y
+        
+        # Normalize the combined vector
+        combined_mag = np.sqrt(combined_x**2 + combined_y**2)
+        if combined_mag > 0:
+            return (combined_x / combined_mag, combined_y / combined_mag)
+        
+        return (radial_x, radial_y)
     
     def _calculate_obstacle_avoidance(self) -> tuple:
         """
         Calculate the obstacle avoidance velocity component.
-        Returns (v_x, v_y) weighted by collision probabilities.
+        Returns ((v_x, v_y), min_distance_to_surface) weighted by collision probabilities.
         """
         total_avoidance_x = 0.0
         total_avoidance_y = 0.0
         total_weight = 0.0
+        min_distance = float('inf')
         
         for obstacle in self._obstacles:
             collision_prob = self._calculate_collision_probability(obstacle)
             
+            # Track minimum distance to any obstacle
+            distance = np.sqrt(
+                (obstacle.position[0] - self._state.position[0]) ** 2
+                + (obstacle.position[1] - self._state.position[1]) ** 2
+            )
+            distance_to_surface = distance - obstacle.radius
+            min_distance = min(min_distance, distance_to_surface)
+            
             if collision_prob > 0.01:  # Only consider significant threats
                 steering = self._calculate_steering_angle(obstacle)
                 
-                # Weight the steering by collision probability
-                total_avoidance_x += steering[0] * collision_prob
-                total_avoidance_y += steering[1] * collision_prob
-                total_weight += collision_prob
+                # Apply boost if very close or penetrating
+                if distance_to_surface < 0.05:
+                    # Emergency repulsion - much stronger force
+                    emergency_boost = 5.0
+                    total_avoidance_x += steering[0] * collision_prob * emergency_boost
+                    total_avoidance_y += steering[1] * collision_prob * emergency_boost
+                    total_weight += collision_prob * emergency_boost
+                else:
+                    # Normal avoidance
+                    total_avoidance_x += steering[0] * collision_prob
+                    total_avoidance_y += steering[1] * collision_prob
+                    total_weight += collision_prob
         
         if total_weight > 0:
             # Normalize and scale by avoidance strength
             avoid_x = (total_avoidance_x / total_weight) * self._avoidance_strength
             avoid_y = (total_avoidance_y / total_weight) * self._avoidance_strength
             
-            # Cap the avoidance speed to prevent excessive velocities
-            avoid_speed = np.sqrt(avoid_x**2 + avoid_y**2)
-            if avoid_speed > self._max_avoidance_speed:
-                scale = self._max_avoidance_speed / avoid_speed
-                avoid_x *= scale
-                avoid_y *= scale
+            # Only cap speed if not in emergency (allow higher speeds when critically close)
+            if min_distance > 0.05:
+                avoid_speed = np.sqrt(avoid_x**2 + avoid_y**2)
+                if avoid_speed > self._max_avoidance_speed:
+                    scale = self._max_avoidance_speed / avoid_speed
+                    avoid_x *= scale
+                    avoid_y *= scale
             
-            return (avoid_x, avoid_y)
+            return ((avoid_x, avoid_y), min_distance)
         
-        return (0.0, 0.0)
+        return ((0.0, 0.0), min_distance)
 
     def step(self, dt):
         """
@@ -158,6 +262,8 @@ class Robot(Node):
         delta_phase_sum = 0
         delta_v_x_sum = 0
         delta_v_y_sum = 0
+
+        J = self._get_J1_value()
 
         for neighbour in self._neighbours:
             theta_diff = neighbour.phase - self._state.phase
@@ -172,14 +278,14 @@ class Robot(Node):
             delta_phase_sum += np.sin(theta_diff) / distance
             delta_v_x_sum += (
                 (neighbour.position[0] - self._state.position[0]) / distance
-            ) * (self._A + self._J * np.cos(theta_diff)) - (
+            ) * (self._A + J * np.cos(theta_diff)) - (
                 self._B
                 * (neighbour.position[0] - self._state.position[0])
                 / (distance**2)
             )
             delta_v_y_sum += (
                 (neighbour.position[1] - self._state.position[1]) / distance
-            ) * (self._A + self._J * np.cos(theta_diff)) - (
+            ) * (self._A + J * np.cos(theta_diff)) - (
                 self._B
                 * (neighbour.position[1] - self._state.position[1])
                 / (distance**2)
@@ -196,17 +302,26 @@ class Robot(Node):
         ) % (2 * np.pi)
         
         # Calculate obstacle avoidance
-        avoidance_x, avoidance_y = self._calculate_obstacle_avoidance()
+        (avoidance_x, avoidance_y), min_dist_to_obstacle = self._calculate_obstacle_avoidance()
         
         # Combine swarmalator velocity with obstacle avoidance
         # The avoidance term is already weighted by collision probability
         target_v_x = delta_v_x_sum + avoidance_x
         target_v_y = delta_v_y_sum + avoidance_y
         
+        # Reduce damping when close to obstacles for faster response
+        # Critical distance: reduce damping significantly
+        if min_dist_to_obstacle < 0.1:
+            adaptive_damping = 0.05  # Almost no damping in emergency
+        elif min_dist_to_obstacle < 0.2:
+            adaptive_damping = 0.15  # Reduced damping when close
+        else:
+            adaptive_damping = self._velocity_damping  # Normal damping
+        
         # Apply velocity smoothing to reduce oscillations
         # Blend previous velocity with target velocity
-        smoothed_v_x = (1 - self._velocity_damping) * target_v_x + self._velocity_damping * self._velocity[0]
-        smoothed_v_y = (1 - self._velocity_damping) * target_v_y + self._velocity_damping * self._velocity[1]
+        smoothed_v_x = (1 - adaptive_damping) * target_v_x + adaptive_damping * self._velocity[0]
+        smoothed_v_y = (1 - adaptive_damping) * target_v_y + adaptive_damping * self._velocity[1]
         
         # Store current velocity for next iteration
         self._velocity = (smoothed_v_x, smoothed_v_y)

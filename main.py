@@ -32,21 +32,29 @@ def main():
     # Create a network
     network = Network()
     
-    # Create obstacles
+    # Create obstacles - scattered throughout the environment
     obstacles = [
+        # Original obstacles
         Obstacle(position=(0.5, 0.5), radius=0.3),
         Obstacle(position=(-0.6, -0.4), radius=0.25),
         Obstacle(position=(0.8, -0.7), radius=0.2),
         Obstacle(position=(-0.5, 0.8), radius=0.15),
+        
+        # Add more variety
+        Obstacle(position=(3.5, -1.2), radius=0.2),
+        Obstacle(position=(-3.8, 1.3), radius=0.19),
+        Obstacle(position=(1.8, 3.2), radius=0.21),
+        Obstacle(position=(-1.9, -3.1), radius=0.23),
+        Obstacle(position=(-3.2, -3.4), radius=0.16),
     ]
 
     # Create all the robots
-    positions = np.random.uniform(-3, 3, (robot_count, 2))
+    positions = np.random.uniform(-3, -2, (robot_count, 2))
     phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
 
     nat_freqs = np.ones(robot_count)
-    half_len = robot_count // 2
-    nat_freqs[:half_len] = -1.0  # First half slower
+    # half_len = robot_count // 2
+    # nat_freqs[:half_len] = -1.0  # First half slower
 
     robots = [Robot(network, positions[i], phases[i], nat_freqs[i], obstacles) for i in range(robot_count)]
 
