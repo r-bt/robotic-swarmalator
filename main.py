@@ -57,26 +57,26 @@ def main():
     positions[:, 2] = np.random.uniform(0.1, 1, robot_count)  # small z variation
 
     # phases = np.random.uniform(0, 2 * np.pi, robot_count)
-    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
+    phases = np.linspace(0, 1 * np.pi, robot_count, endpoint=False)
 
     planes = [
-        (np.array([0, 0, 0]), np.array([0, 0, 1])),
-        (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
-        (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
-        (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
-        (np.array([-1.5,0,0]), np.array([1, 0, 0])),
-        (np.array([0,-1.5,0]), np.array([0, 1, 0])),
+        # (np.array([0, 0, 0]), np.array([0, 0, 1])),
+        # (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
+        # (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
+        # (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
+        # (np.array([-1.5,0,0]), np.array([1, 0, 0])),
+        # (np.array([0,-1.5,0]), np.array([0, 1, 0])),
     ]
 
     experimental_parameters = ExperimentalParameters(
-        K=1.0, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[1.0,1.0,1.0], planes=planes)
+        K=0.0, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[0.5,0.5,0.5], planes=planes)
 
     natural_frequencies = np.zeros(robot_count)
     # natural_frequencies[:len(natural_frequencies) // 2] = -1.0
 
     robots = [Robot(network, positions[i], float(phases[i]), natural_frequency=natural_frequencies[i], experimental_parameters=experimental_parameters) for i in range(robot_count)]
 
-    target = np.array([1.0, 1.0, 0.75])
+    target = np.array([2.0, 0.0, 0.5])
     # target=None
 
     for r in robots:
@@ -101,8 +101,18 @@ def main():
     scatter.set_data(current_positions, face_color=current_colors, size=5.0, edge_width=0.0)
 
     # Add a floor
-    for plane in planes:
-        view.add(create_plane(plane[0], plane[1]))
+    # for plane in planes:
+    #     view.add(create_plane(plane[0], plane[1]))
+
+    # Add a hoop in the center of the view
+    theta = np.linspace(0, 2 * np.pi, 200)
+
+    hoop_radius=0.5
+
+    path = np.c_[np.zeros_like(theta)+1, np.cos(theta) * hoop_radius, np.sin(theta) * hoop_radius + hoop_radius]
+
+    ring = scene.visuals.Tube(path, radius=0.05, color=(1,0.5,0.2,1), shading="smooth");
+    view.add(ring)
 
     # Add a 3D axis helper
     axis = scene.visuals.XYZAxis(parent=view.scene)

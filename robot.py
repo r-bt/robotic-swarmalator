@@ -78,6 +78,8 @@ class Robot(Node):
         self._network.join(self)
         self._network.broadcast(self._state)
 
+        self._step = 0
+
     def _get_J1_value(self):
         """
         If target is set, calculate the J1 value based on the distance to the target
@@ -112,6 +114,8 @@ class Robot(Node):
         """
         Update the robot state for one time step
         """
+        self._step += 1
+
         delta_phase_sum = 0
         net_force = np.zeros(3, dtype=float)
 
@@ -121,8 +125,8 @@ class Robot(Node):
 
         J1 = self._J_1 
 
-        if self._target is not None:
-            J1 = self._get_J1_value()
+        # if self._target is not None:
+        #     J1 = self._get_J1_value()
 
         for neighbour in self._neighbours:
             theta_diff = neighbour.phase - phase
@@ -137,6 +141,12 @@ class Robot(Node):
             repulsive_force = (neighbour.position - position) / distance**2 * (self._B - self._J_2 * np.cos(theta_diff))
 
             net_force += attractive_force - repulsive_force
+            
+        # Calculate the CLF contribution if target is set
+
+        if self._target is not None and self._step > 300:
+            clf_contribution = self.calculate_clf(self._target, swarmalator_contribution=net_force)
+            net_force += clf_contribution
 
         # Add plane repulsive forces
 
@@ -165,7 +175,11 @@ class Robot(Node):
         ) % (2 * np.pi)
 
         # Update position
-        new_position = position + dt * net_force
+
+        # if self._step > 200:
+        net_force += self.calculate_rot_vector(dt, hoop_normal=np.array([1,0,0]))  # Assuming hoop normal along x-axis
+
+        new_position = position + dt * (net_force)
 
         self._state = NeighbourState(
             id=self._state.id, position=new_position, phase=new_phase
@@ -209,3 +223,110 @@ class Robot(Node):
             self._target = None
         else:
             self._target = np.array(target)
+
+    def calculate_rot_vector(self, dt, hoop_normal):
+        """
+        Compute rotational velocity contribution using Rodrigues' formula,
+        aligning the collective long axis with the hoop normal.
+        """
+
+        # --- 1. Centroid and relative positions ---
+        positions = np.array([n.position for n in self._neighbours] + [self.position])
+        centroid = positions.mean(axis=0)
+        r_i = self.position - centroid
+
+        # --- 2. Long axis (furthest pair) ---
+        diffs = positions[:, None, :] - positions[None, :, :]
+        dists = np.linalg.norm(diffs, axis=2)
+        i, j = np.unravel_index(np.argmax(dists), dists.shape)
+        long_axis = positions[i] - positions[j]
+
+        if np.allclose(long_axis, 0):
+            return np.zeros(3)
+
+        a = long_axis / np.linalg.norm(long_axis)
+        if np.dot(a, hoop_normal) < 0:
+            a = -a
+
+        # --- 3. Rotation vector ---
+        b = hoop_normal / np.linalg.norm(hoop_normal)
+        rot_axis = np.cross(a, b)
+        sin_angle = np.linalg.norm(rot_axis)
+        cos_angle = np.clip(np.dot(a, b), -1.0, 1.0)
+
+        if sin_angle < 1e-6:  # Already aligned
+            return np.zeros(3)
+
+        rot_axis /= sin_angle
+        angle = np.arctan2(sin_angle, cos_angle)
+
+        # --- 4. Ω and clamp ---
+        Omega = rot_axis * angle / dt
+        Omega_norm = np.linalg.norm(Omega)
+        if Omega_norm > 1.0:
+            Omega = Omega / Omega_norm
+
+        # --- 5. Rodrigues rotation ---
+        alpha = np.linalg.norm(Omega) * dt
+        n_hat = Omega / np.linalg.norm(Omega)
+        c, s = np.cos(alpha), np.sin(alpha)
+        r_plus = r_i * c + np.cross(n_hat, r_i) * s + n_hat * np.dot(n_hat, r_i) * (1 - c)
+
+        return (r_plus - r_i) / dt
+    
+    def calculate_clf(self, target, swarmalator_contribution, lambda_=1.0):
+        """
+        Compute velocity contribution using Control Lyapunov Function (CLF) for a given target
+        """
+
+        # -------------------------------
+        # 1. Centroid
+        # -------------------------------
+
+        positions = np.array([n.position for n in self._neighbours] + [self.position])
+
+        centroid = np.mean(positions, axis=0)
+
+        N = len(positions)
+
+        # -------------------------------
+        # 2. Error vector
+        # -------------------------------
+
+        error = centroid - target 
+
+        # -------------------------------
+        # 3. CLF – Calculate V 
+        # V(x) = ||e||^2
+        # -------------------------------
+
+        V = np.dot(error, error)
+
+        # -------------------------------
+        # 4. CLF – Calculate LfV
+        # -------------------------------
+
+        LfV = 2 / N * error * swarmalator_contribution
+
+        # -------------------------------
+        # 5. CLF – Calculate control input u
+        # -------------------------------
+
+        u = - N / 2 * (LfV+lambda_*V) / (np.dot(error, error)) * error
+
+        return u
+
+
+        
+
+
+
+        
+
+    
+
+
+
+
+
+
