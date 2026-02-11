@@ -37,9 +37,9 @@ class Robot(Node):
 
         # Swarmalator properties
         self._K = 1.0
-        self._J = 0.0
+        self._J = 1.0
         self._A = 1.0
-        self._B = 1.0
+        self._B = 2.0
         self._natural_frequency = 0.0
 
         # Keep track of other robots
@@ -50,8 +50,8 @@ class Robot(Node):
         self._network.broadcast(self._state)
 
         # --- CBF Parameters ---
-        self._rMin = 1.8  # Inner annulus radius
-        self._rMax = 2.1 # Outer annulus radius
+        self._rMin = 0.5  # Inner annulus radius
+        self._rMax = 1.6 # Outer annulus radius
         self._p = 10.0    # CBF parameter (alpha in LfB + alpha*B >= 0)
 
         self._steps = 0
@@ -77,6 +77,13 @@ class Robot(Node):
         # else:
         self._J = self.cbf(self._J)
         # J_safe = self._J
+
+        # print(self._J)
+
+        centroid = np.mean(
+            [neighbour.position for neighbour in self._neighbours] + [self._state.position],
+            axis=0,
+        )
 
         for neighbour in self._neighbours:
             theta_diff = neighbour.phase - self._state.phase
@@ -109,8 +116,8 @@ class Robot(Node):
             delta_v_x_sum /= len(self._neighbours)
             delta_v_y_sum /= len(self._neighbours)
 
-        delta_v_x_sum = np.clip(delta_v_x_sum, -MAX_VELOCITY, MAX_VELOCITY)
-        delta_v_y_sum = np.clip(delta_v_y_sum, -MAX_VELOCITY, MAX_VELOCITY)
+        delta_v_x_sum = np.clip(delta_v_x_sum - centroid[0], -MAX_VELOCITY, MAX_VELOCITY)
+        delta_v_y_sum = np.clip(delta_v_y_sum - centroid[1], -MAX_VELOCITY, MAX_VELOCITY)
 
         # Update phase
         new_phase = (
@@ -250,22 +257,11 @@ class Robot(Node):
         b_vec = np.array([Lfb1 + self._p*b1, Lfb2 + self._p*b2])
 
         J_safe = self.solve_1d_cbf(J_target, A=Ab.flatten(), b=b_vec)
+
+        J_safe = np.clip(J_safe, -1.0, 1.0) if J_safe is not None else None
+
         return J_target if J_safe is None else J_safe
-        
-        # Objective: minimize 0.5 * ||u - J_target||^2
-        # H = np.eye(1)
-        # F = -J_target
-        # objective = cp.Minimize(0.5*cp.quad_form(u, H) + F*u)
-        # constraints = [Ab @ u <= b_vec]
 
-        # prob = cp.Problem(objective, constraints)
-        
-        # prob.solve(solver=cp.OSQP, verbose=False) 
-
-        # if u.value is None or prob.status in ["infeasible", "unbounded"]:
-        #     return J_target
-        
-        # return float(u.value[0])
 
 
 # Set max velocity to stop agents flying off
