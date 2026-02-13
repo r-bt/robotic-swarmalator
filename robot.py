@@ -37,6 +37,9 @@ class Robot(Node):
         self._B = 1.0
         self._natural_frequency = 0.0
 
+        self._target = None
+        self._alpha = 1.0
+
         # Keep track of other robots
         self._neighbours: List[NeighbourState] = []
 
@@ -51,6 +54,14 @@ class Robot(Node):
     @property
     def phase(self):
         return self._state.phase
+    
+    @property
+    def target(self):
+        return self._target
+    
+    @target.setter
+    def target(self, value):
+        self._target = value
 
     def step(self, dt):
         """
@@ -59,6 +70,9 @@ class Robot(Node):
         delta_phase_sum = 0
         delta_v_x_sum = 0
         delta_v_y_sum = 0
+
+        if self._target is not None:
+            self._J = self._get_J1_value()
 
         for neighbour in self._neighbours:
             theta_diff = neighbour.phase - self._state.phase
@@ -135,3 +149,28 @@ class Robot(Node):
                 self._neighbours.append(message)
         else:
             raise ValueError("Message must be of type NeighbourState")
+        
+    def _get_J1_value(self):
+        """
+        If target is set, calculate the J1 value based on the distance to the target
+        """
+
+        positions = np.array([neighbour.position for neighbour in self._neighbours] + [self.position])
+
+        # Target is (3,) while positions is (agents, 3) so we need to broadcast to perform the subtraction
+
+        distToTargetVector = self._target - positions[:, :2]
+
+        # Calculate the distance to the target
+        distToTarget = np.linalg.norm(distToTargetVector, axis=1)
+
+        # Calculate the min and max distance to the target
+        minDistToTarget = np.min(distToTarget)
+        maxDistToTarget = np.max(distToTarget)
+
+        if maxDistToTarget == minDistToTarget:
+            return 0.0  # Avoid division by zero, if all distances are the same, J should be 0
+
+        J_val = self._alpha * (np.absolute(distToTarget[-1] - minDistToTarget)) / (maxDistToTarget - minDistToTarget)
+
+        return J_val

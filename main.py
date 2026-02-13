@@ -34,20 +34,27 @@ def main():
 
     # Create all the robots
     positions = np.random.uniform(-1, 1, (robot_count, 2))
-    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
+    phases = np.linspace(0, 1 * np.pi, robot_count, endpoint=False)
 
     robots = [Robot(network, positions[i], phases[i]) for i in range(robot_count)]
+
+    target = (-4, 4)
+
+    for r in robots:
+        r.target = target
 
     # Setup the animation
     fig, ax = plt.subplots()
     sc = ax.scatter([], [], s=20)
-
-    dt = 0.01  # simulation time step
+    centroid_marker = ax.plot([], [], marker='x', color='black', markersize=10, linestyle='None')[0]
+    target_marker = ax.plot([], [], marker='o', color='red', markersize=10, linestyle='None')[0]
+    target_marker.set_data([target[0]], [target[1]])  # Set target position
+    dt = 0.2  # simulation time step
 
     def init():
-        ax.set_xlim(-2, 2)
-        ax.set_ylim(-2, 2)
-        return (sc,)
+        ax.set_xlim(-10, 10)
+        ax.set_ylim(-10, 10)
+        return (sc, centroid_marker, target_marker)
 
     def update(frame):
         # Update all robots
@@ -65,9 +72,14 @@ def main():
 
         sc.set_offsets(positions)
         sc.set_color(colors)
-        return (sc,)
 
-    ani = FuncAnimation(fig, update, init_func=init, blit=True, interval=int(dt * 1000))
+        # Update centroid
+        centroid = positions.mean(axis=0)
+        centroid_marker.set_data([centroid[0]], [centroid[1]])
+
+        return (sc, centroid_marker, target_marker)
+
+    ani = FuncAnimation(fig, update, init_func=init, blit=True, interval=int(1))
     plt.show()
 
 
