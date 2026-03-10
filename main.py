@@ -5,6 +5,8 @@ import colorsys
 from vispy import scene, app
 from vispy.geometry import MeshData
 import time
+import json
+import imageio
 
 
 def angles_to_rgb(angles_rad):
@@ -47,6 +49,8 @@ def create_plane(point, normal):
     return mesh
 
 robot_count = 10
+cummulative_time = 0.0
+frames = []  # List to store video frames
 
 def main():
     # Create a network
@@ -57,21 +61,22 @@ def main():
     positions[:, 2] = np.random.uniform(0.1, 1, robot_count)  # small z variation
 
     # phases = np.random.uniform(0, 2 * np.pi, robot_count)
-    phases = np.linspace(0, 1 * np.pi, robot_count, endpoint=False)
+    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
 
     planes = [
-        # (np.array([0, 0, 0]), np.array([0, 0, 1])),
-        # (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
-        # (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
-        # (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
-        # (np.array([-1.5,0,0]), np.array([1, 0, 0])),
-        # (np.array([0,-1.5,0]), np.array([0, 1, 0])),
+        (np.array([0, 0, 0]), np.array([0, 0, 1])),
+        (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
+        (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
+        (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
+        (np.array([-1.5,0,0]), np.array([1, 0, 0])),
+        (np.array([0,-1.5,0]), np.array([0, 1, 0])),
     ]
 
     experimental_parameters = ExperimentalParameters(
-        K=0.0, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[0.5,0.5,0.5], planes=planes)
+        K=0.0, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[1.0,1.0,1.0], planes=planes)
 
     natural_frequencies = np.zeros(robot_count)
+    # natural_frequencies = np.ones(robot_count)
     # natural_frequencies[:len(natural_frequencies) // 2] = -1.0
 
     robots = [Robot(network, positions[i], float(phases[i]), natural_frequency=natural_frequencies[i], experimental_parameters=experimental_parameters) for i in range(robot_count)]
@@ -105,21 +110,24 @@ def main():
     #     view.add(create_plane(plane[0], plane[1]))
 
     # Add a hoop in the center of the view
-    theta = np.linspace(0, 2 * np.pi, 200)
+    # theta = np.linspace(0, 2 * np.pi, 200)
 
-    hoop_radius=0.5
+    # hoop_radius=0.5
 
-    path = np.c_[np.zeros_like(theta)+1, np.cos(theta) * hoop_radius, np.sin(theta) * hoop_radius + hoop_radius]
+    # path = np.c_[np.zeros_like(theta)+1, np.cos(theta) * hoop_radius, np.sin(theta) * hoop_radius + hoop_radius]
 
-    ring = scene.visuals.Tube(path, radius=0.05, color=(1,0.5,0.2,1), shading="smooth");
-    view.add(ring)
+    # ring = scene.visuals.Tube(path, radius=0.05, color=(1,0.5,0.2,1), shading="smooth");
+    # view.add(ring)
 
     # Add a 3D axis helper
     axis = scene.visuals.XYZAxis(parent=view.scene)
 
     dt = 0.05  # simulation time step (s)
 
+    results = []
+
     def update(event):
+        global cummulative_time, frames
         # Update all robots
         for r in robots:
             r.step(dt)
@@ -134,8 +142,38 @@ def main():
 
         scatter.set_data(pos, face_color=col, size=5.0, edge_width=0.0)
 
-    timer = app.Timer(interval=dt, connect=update, start=True)
+        # Capture frame for video
+        frame = canvas.render()
+        frames.append(frame)
+
+        # Record the current state (positions, phases, and timestep)
+        data = {
+            'time': cummulative_time,
+            'positions': pos.tolist(),
+            'phases': ang.tolist()
+        }
+
+        results.append(data)
+        cummulative_time += dt
+
+        # if cummulative_time >= 55.0:  # Run for 55 seconds
+        #     app.quit()
+
+    timer = app.Timer(interval=0.01, connect=update, start=True)
     app.run()
+
+    print("Simulation finished. Saving results and video...")
+
+    # Save JSON results
+    with open("results.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    # # Save video
+    # if frames:
+    #     output_filename = "swarmalator_simulation.mp4"
+    #     print(f"Saving video to {output_filename}...")
+    #     imageio.mimsave(output_filename, frames, fps=int(1/dt), codec='libx264', quality=8)
+    #     print(f"Video saved successfully! ({len(frames)} frames at {int(1/dt)} fps)")
 
 
 if __name__ == "__main__":
