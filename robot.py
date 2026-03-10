@@ -170,7 +170,11 @@ class Robot(Node):
 
         if maxDistToTarget == minDistToTarget:
             return 0.0  # Avoid division by zero, if all distances are the same, J should be 0
+        
+        dc = maxDistToTarget
 
-        J_val = self._alpha * (np.absolute(distToTarget[-1] - minDistToTarget)) / (maxDistToTarget - minDistToTarget)
+        currentDistToTarget = distToTarget[-1]
+
+        J_val = self._alpha * (np.absolute(currentDistToTarget - dc)) / (maxDistToTarget - minDistToTarget)
 
         return J_val
