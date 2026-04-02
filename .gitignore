@@ -1,3 +1,4 @@
 *.pyc
 results.json
 swarmalator_simulation.mp4
+.DS_Store
