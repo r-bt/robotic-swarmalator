@@ -98,7 +98,9 @@ class Robot(Node):
         minDistToTarget = np.min(distToTarget)
         maxDistToTarget = np.max(distToTarget)
 
-        J_val = self._alpha * (np.absolute(distToTarget[-1] - minDistToTarget)) / (maxDistToTarget - minDistToTarget)
+        dc = minDistToTarget
+
+        J_val = self._alpha * (np.absolute(distToTarget[-1] - dc)) / (maxDistToTarget - minDistToTarget)
 
         return J_val
 
@@ -125,8 +127,8 @@ class Robot(Node):
 
         J1 = self._J_1 
 
-        # if self._target is not None:
-        #     J1 = self._get_J1_value()
+        if self._target is not None:
+            J1 = self._get_J1_value()
 
         for neighbour in self._neighbours:
             theta_diff = neighbour.phase - phase
@@ -144,9 +146,9 @@ class Robot(Node):
             
         # Calculate the CLF contribution if target is set
 
-        if self._target is not None and self._step > 300:
-            clf_contribution = self.calculate_clf(self._target, swarmalator_contribution=net_force)
-            net_force += clf_contribution
+        # if self._target is not None and self._step > 300:
+        #     clf_contribution = self.calculate_clf(self._target, swarmalator_contribution=net_force)
+        #     net_force += clf_contribution
 
         # Add plane repulsive forces
 
@@ -177,9 +179,10 @@ class Robot(Node):
         # Update position
 
         # if self._step > 200:
-        net_force += self.calculate_rot_vector(dt, hoop_normal=np.array([1,0,0]))  # Assuming hoop normal along x-axis
+        #     net_force += self.calculate_rot_vector(dt, hoop_normal=np.array([1,0,0]))  # Assuming hoop normal along x-axis
 
         new_position = position + dt * (net_force)
+        new_position[2] = 0
 
         self._state = NeighbourState(
             id=self._state.id, position=new_position, phase=new_phase
