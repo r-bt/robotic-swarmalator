@@ -25,7 +25,7 @@ def angles_to_rgb(angles_rad):
     return rgb_colors
 
 
-robot_count = 12
+robot_count = 50
 
 
 def main():
@@ -34,27 +34,32 @@ def main():
 
     # Create all the robots
     positions = np.random.uniform(-1, 1, (robot_count, 2))
-    phases = np.linspace(0, 1 * np.pi, robot_count, endpoint=False)
+    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
+    natural_frequencies = np.ones(robot_count)
+    natural_frequencies[:robot_count//2] = -1.0  # Set half the robots to have a different natural frequency
 
-    robots = [Robot(network, positions[i], phases[i]) for i in range(robot_count)]
+    robots = [Robot(network, positions[i], phases[i], natural_frequencies[i]) for i in range(robot_count)]
 
-    target = (-4, 4)
+    # target = (-4, 4)
+    target=None
 
     for r in robots:
         r.target = target
 
     # Setup the animation
     fig, ax = plt.subplots()
-    sc = ax.scatter([], [], s=20)
-    centroid_marker = ax.plot([], [], marker='x', color='black', markersize=10, linestyle='None')[0]
-    target_marker = ax.plot([], [], marker='o', color='red', markersize=10, linestyle='None')[0]
-    target_marker.set_data([target[0]], [target[1]])  # Set target position
+    sc = ax.scatter([], [], s=25)
+    # centroid_marker = ax.plot([], [], marker='x', color='black', markersize=10, linestyle='None')[0]
+    # target_marker = ax.plot([], [], marker='o', color='red', markersize=10, linestyle='None')[0]
+    # target_marker.set_data([target[0]], [target[1]])  # Set target position
     dt = 0.2  # simulation time step
 
     def init():
-        ax.set_xlim(-10, 10)
-        ax.set_ylim(-10, 10)
-        return (sc, centroid_marker, target_marker)
+        ax.set_xlim(-2, 2)
+        ax.set_ylim(-2, 2)
+        ax.set_aspect('equal', adjustable='box')
+        return (sc,)
+        # return (sc, centroid_marker, target_marker)
 
     def update(frame):
         # Update all robots
@@ -73,11 +78,12 @@ def main():
         sc.set_offsets(positions)
         sc.set_color(colors)
 
-        # Update centroid
-        centroid = positions.mean(axis=0)
-        centroid_marker.set_data([centroid[0]], [centroid[1]])
+        # # Update centroid
+        # centroid = positions.mean(axis=0)
+        # centroid_marker.set_data([centroid[0]], [centroid[1]])
 
-        return (sc, centroid_marker, target_marker)
+        return (sc,)
+        # return (sc, centroid_marker, target_marker)
 
     ani = FuncAnimation(fig, update, init_func=init, blit=True, interval=int(1))
     plt.show()

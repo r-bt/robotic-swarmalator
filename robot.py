@@ -21,7 +21,7 @@ class Robot(Node):
     A robot which implements the swarmalator model.
     """
 
-    def __init__(self, network: Network, position=(0, 0), phase=0.0):
+    def __init__(self, network: Network, position=(0, 0), phase=0.0, natural_frequency=0.0):
         """
         Initialize the robot
         """
@@ -31,11 +31,11 @@ class Robot(Node):
         self._state = NeighbourState(id=uuid.uuid4(), position=position, phase=phase)
 
         # Swarmalator properties
-        self._K = 0.0
+        self._K = 1.0
         self._J = 1.0
         self._A = 1.0
         self._B = 1.0
-        self._natural_frequency = 0.0
+        self._natural_frequency = natural_frequency
 
         self._target = None
         self._alpha = 1.0
