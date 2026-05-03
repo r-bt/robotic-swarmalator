@@ -35,6 +35,7 @@ class ExperimentalParameters:
     A: List[float]
     B: List[float]
     planes: List
+    alpha: float = 1.0
 
 class Robot(Node):
     """
@@ -46,7 +47,7 @@ class Robot(Node):
         position=np.array([0, 0, 0]), 
         phase=0.0, 
         natural_frequency=0.0, 
-        experimental_parameters=ExperimentalParameters(K=0.0, J_1=1.0, J_2=0.0, A=1.0, B=1.0, planes=[]),
+        experimental_parameters=ExperimentalParameters(K=0.0, J_1=1.0, J_2=0.0, A=1.0, B=1.0, planes=[], alpha=1.0),
     ):
         """
         Initialize the robot
@@ -63,7 +64,7 @@ class Robot(Node):
         self._A = experimental_parameters.A
         self._B = experimental_parameters.B
         self._natural_frequency = natural_frequency
-        self._alpha = 1.0
+        self._alpha = experimental_parameters.alpha
 
         # Keep track of other robots
         self._neighbours: List[NeighbourState] = []
@@ -182,7 +183,7 @@ class Robot(Node):
         #     net_force += self.calculate_rot_vector(dt, hoop_normal=np.array([1,0,0]))  # Assuming hoop normal along x-axis
 
         new_position = position + dt * (net_force)
-        new_position[2] = 0
+        # new_position[2] = 0
 
         self._state = NeighbourState(
             id=self._state.id, position=new_position, phase=new_phase

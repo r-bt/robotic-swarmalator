@@ -9,29 +9,33 @@ import json
 robot_count = 10
 cummulative_time = 0.0
 
-def main():
+def main(experimental_parameters):
     # Create a network
     network = Network()
 
     # Create all the robots with 3D positions
-    positions = np.random.uniform(1, 0.2, (robot_count, 3))
-    positions[:, 2] = np.zeros(robot_count)  # Start all robots on the same plane (z=0)
+    # positions = np.random.uniform(-2, 2, (robot_count, 3))
+    # positions[:, 2] = np.zeros(robot_count)  # Start all robots on the same plane (z=0)
     # positions[:, 2] = np.random.uniform(0.1, 1, robot_count)  # small z variation
+    # Position 10 agents along a square with center at the origin and side length of 1
+    side_length = 1.0
+    positions = np.array([
+        [-side_length/2, -side_length/2, 0],
+        [side_length/2, -side_length/2, 0],
+        [side_length/2, side_length/2, 0],
+        [-side_length/2, side_length/2, 0],
+        [0, -side_length/2, 0],
+        [side_length/2, 0, 0],
+        [0, side_length/2, 0],
+        [-side_length/2, 0, 0],
+        [side_length/4, side_length/4, 0],
+        [-side_length/4, -side_length/4, 0],
+    ], dtype=np.float32)
+
+    positions[:, 2] = np.random.uniform(0, 6, robot_count)  # small z variation
 
     # phases = np.random.uniform(0, 2 * np.pi, robot_count)
-    phases = np.linspace(0, 1 * np.pi, robot_count, endpoint=False)
-
-    planes = [
-        # (np.array([0, 0, 0]), np.array([0, 0, 1])),/
-        # (np.array([0, 0, 1.8]), np.array([0, 0, -1])),
-        # (np.array([1.5, 0, 0]), np.array([-1, 0, 0])),
-        # (np.array([0, 1.5, 0]), np.array([0, -1, 0])),
-        # (np.array([-1.5,0,0]), np.array([1, 0, 0])),
-        # (np.array([0,-1.5,0]), np.array([0, 1, 0])),
-    ]
-
-    experimental_parameters = ExperimentalParameters(
-        K=0.0, J_1=1.0, J_2=0.0, A=[1.0,1.0,1.0], B=[0.6,0.6,0.6], planes=planes)
+    phases = np.linspace(0, 2 * np.pi, robot_count, endpoint=False)
 
     natural_frequencies = np.zeros(robot_count)
     # natural_frequencies = np.ones(robot_count)
@@ -39,11 +43,11 @@ def main():
 
     robots = [Robot(network, positions[i], float(phases[i]), natural_frequency=natural_frequencies[i], experimental_parameters=experimental_parameters) for i in range(robot_count)]
 
-    target = np.array([0, 0, 0])
+    target = np.array([3, 0, 3])
     # target=None
 
-    # for r in robots:
-    #     r.set_target(target)
+    for r in robots:
+        r.set_target(target)
 
     # Setup VisPy 3D scene
     canvas = scene.SceneCanvas(keys='interactive', size=(900, 700), show=True, title='Swarmalators 3D')
@@ -82,7 +86,7 @@ def main():
 
     dt = 0.05  # simulation time step (s)
 
-    results_file = open("results/results.jsonl", "w")
+    results_file = open(f"results/alpha={experimental_parameters.alpha},x={target[0]},y={target[1]},z={target[2]}.jsonl", "w")
     parameters = {
         'robot_count': robot_count,
         'dt': dt,
@@ -97,8 +101,6 @@ def main():
         'planes': [{'point': p.tolist(), 'normal': n.tolist()} for p, n in planes],
     }
     results_file.write(json.dumps(parameters) + '\n')
-
-    results = []
 
     def update(event):
         global cummulative_time
@@ -115,7 +117,7 @@ def main():
 
         col = angles_to_rgb(ang)
         scatter.set_data(pos, face_color=col, size=5.0, edge_width=0.0)
-        writer.append_data(canvas.render())
+        # writer.append_data(canvas.render())
 
         # Record the current state (positions, phases, and timestep)
         data = {
@@ -124,30 +126,72 @@ def main():
             'phases': ang.tolist()
         }
 
-        # results.append(data)
         results_file.write(json.dumps(data) + '\n')
         cummulative_time += dt
 
-        if cummulative_time >= 30.0 and robots[0]._target is None:  # Add a target after 30 seconds
-            print("Setting target at time 30s")
-            for r in robots:
-                r.set_target(target)
+        # print(cummulative_time)
 
-        # if cummulative_time >= 120.0:  # Run for 120 seconds
-        #     app.quit()
+        if cummulative_time >= 240.0:  # Run for 120 seconds
+            app.quit()
 
-    frame_interval = 0.01  # seconds
+    frame_interval = 0.01 # as fast as possible
 
-    writer = imageio.get_writer("results/swarmalator_simulation.mp4", fps=int(1 / frame_interval), codec="libx264", quality=8)
+    # writer = imageio.get_writer("results/swarmalator_simulation.mp4", fps=int(1 / frame_interval), codec="libx264", quality=8)
 
     timer = app.Timer(interval=frame_interval, connect=update, start=True)
     app.run()
 
-    writer.close()
+    # elpased_time = 0.0
+
+    # while elpased_time < 240.0:
+    #     # Update all robots
+    #     for r in robots:
+    #         r.step(dt)
+
+    #     for r in robots:
+    #         r.broadcast()
+
+    #     # Get current positions and phases
+    #     pos = np.array([r.position for r in robots], dtype=np.float32)
+    #     ang = np.array([r.phase for r in robots], dtype=np.float32)
+
+    #     # Record the current state (positions, phases, and timestep)
+    #     data = {
+    #         'time': elpased_time,
+    #         'positions': pos.tolist(),
+    #         'phases': ang.tolist()
+    #     }
+
+    #     results_file.write(json.dumps(data) + '\n')
+    #     elpased_time += dt
+
+    # writer.close()
     results_file.close()
     print("Video saved to results/swarmalator_simulation.mp4")
-    print("Results saved to results/results.jsonl")
-
+    print(f"Results saved to results/alpha={experimental_parameters.alpha},x={target[0]},y={target[1]},z={target[2]}.jsonl")
 
 if __name__ == "__main__":
-    main()
+
+    planes = [
+        (np.array([0, 0, 0]), np.array([0, 0, 1])),
+        (np.array([0, 0, 6]), np.array([0, 0, -1])),
+        (np.array([6, 0, 0]), np.array([-1, 0, 0])),
+        (np.array([0, 2, 0]), np.array([0, -1, 0])),
+        (np.array([-4,0,0]), np.array([1, 0, 0])),
+        (np.array([0,-2,0]), np.array([0, 1, 0])),
+    ]
+
+    # for i in [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
+    experimental_parameters = ExperimentalParameters(
+        K=1.0, 
+        J_1=1.0, 
+        J_2=0.0, 
+        A=[1.0,1.0,1.0], 
+        B=[1.0,1.0,1.0], 
+        planes=planes,
+        alpha=1
+    )
+
+    print("Running simulation with alpha =", experimental_parameters.alpha)
+
+    main(experimental_parameters=experimental_parameters)
